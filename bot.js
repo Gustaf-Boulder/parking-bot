@@ -221,24 +221,17 @@ function generateAbsurdAnswer(questionText) {
 // ============================================
 
 app.event('app_mention', async ({ event, say }) => {
-  console.log(`[MENTION] Event received`);
-
   if (isSilentDay()) {
-    console.log(`[MENTION] Silent day — ignoring completely`);
-    return; // just say nothing, no reaction needed
+    await app.client.reactions.add({
+      channel: event.channel,
+      timestamp: event.ts,
+      name: 'eyes'
+    });
+    return;
   }
-
   const question = event.text.replace(/<@[A-Z0-9]+>/g, '').trim() || 'någonting';
-  console.log(`[MENTION] Cleaned question: "${question}"`);
-
-  const answer = generateAbsurdAnswer(question);
-
-  try {
-    await say({ thread_ts: event.ts, text: answer });
-    console.log(`[MENTION] ✅ Reply sent`);
-  } catch (err) {
-    console.error(`[MENTION] ❌ say() failed:`, err.message);
-  }
+  console.log(`[${new Date().toISOString()}] 💬 Meddelande: "${question}"`);
+  await say({ thread_ts: event.ts, text: generateAbsurdAnswer(question) });
 });
 
 // ============================================
