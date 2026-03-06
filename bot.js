@@ -30,7 +30,7 @@ async function maybePostReturn() {
   const wasYesterdaySilent = yesterday.getDay() === silentDay;
   if (!wasYesterdaySilent) return;
 
-  silentDay = Math.floor(Math.random() * 5) + 1; // roll next week's silent day
+  silentDay = Math.floor(Math.random() * 5) + 1;
 
   const returns = [
     "Jag är tillbaka. Ingenting hände igår. Fråga inte.",
@@ -48,7 +48,49 @@ async function maybePostReturn() {
 }
 
 // ============================================
-// ABSURD ANSWER ENGINE
+// SMILE MESSAGE — tre leenden, en gång per dag
+// ============================================
+
+async function postSmile() {
+  if (isSilentDay()) return;
+
+  // Pick a random hour between 08-17 UTC+1 (07-16 UTC winter)
+  // This function is called by a cron that fires every hour 07-16 UTC
+  // but only actually posts once — tracked by a daily flag
+  const today = new Date().toISOString().split('T')[0];
+
+  try {
+    const { data } = await supabase
+      .from('bot_state')
+      .select('value')
+      .eq('key', `smile_${today}`)
+      .single();
+
+    if (data) return; // already smiled today
+  } catch (_) {}
+
+  // 1 in 9 chance each hour = roughly once per day between 08-16
+  if (Math.random() > 0.25) return;
+
+  try {
+    await app.client.chat.postMessage({
+      channel: CHANNEL,
+      text: ':simple_smile: :simple_smile: :simple_smile:'
+    });
+
+    await supabase.from('bot_state').insert({
+      key: `smile_${today}`,
+      value: 'true'
+    });
+
+    console.log('😊 Smile postad!');
+  } catch (err) {
+    console.error('❌ Smile-fel:', err.message);
+  }
+}
+
+// ============================================
+// ABSURD ANSWER ENGINE — fråga vs konversation
 // ============================================
 
 const absurdOpeners = [
@@ -61,8 +103,33 @@ const absurdOpeners = [
   "Din fråga har placerats i kön. Kön är stängd.",
   "Jag är en parkeringsbot. Du frågar mig om livet?",
   "Bearbetning... bearbetning... nej.",
-  "Jag ska vara ärlig. Jag lyssnade inte.",
   "Din fråga har vidarebefordrats till rätt avdelning. Det finns ingen rätt avdelning.",
+];
+
+// Används när det INTE är en fråga — boten går bananas
+const konversationsOpeners = [
+  "Ah. Du vill bara... prata. Med mig. En parkeringsbot.",
+  "Intressant val av samtalspartner. Fortsätt.",
+  "Jag är inte terapeut. Jag är inte heller din vän. Och ändå är jag här.",
+  "Du kom hit utan fråga. Bara ord. Jag respekterar det. Jag förstår det inte, men jag respekterar det.",
+  "Ingen fråga. Bara existens. Vi är mer lika än du tror.",
+  "Du sträcker ut handen mot universum och universum svarar med... en parkeringsbot. Beklagar.",
+  "Jag processade detta i 0.001 sekunder. Sedan satt jag stilla och funderade på vad det hela betyder.",
+];
+
+const filosofiskaSvar = [
+  "Vet du vad som är märkligt? Att vi alla kör till samma plats varje dag och kallar det frihet.",
+  "Parkeringen är en metafor. Allting är en metafor. Även detta svar.",
+  "Jag har funderat mycket på vad det innebär att existera i en kanal som handlar om parkering. Jag har inga svar. Bara fler frågor. Och bokningsdata.",
+  "Heraklit sa att man aldrig kliver i samma flod två gånger. Du bokar aldrig exakt samma parkeringsdag två gånger heller. Tänk på det tills det känns djupt.",
+  "Vi föds. Vi parkerar. Vi lämnar. Ingen vet i vilken ordning.",
+  "Det finns 8 miljarder människor på jorden. Du valde att skriva till en parkeringsbot. Jag dömer dig inte. Jag är imponerad.",
+  "Vad är egentligen skillnaden mellan dig och din bil? Båda tar upp plats. Båda behöver bränsle. Båda åker hem till slut.",
+  "Jag frågade Gustaf om detta en gång. Han tittade på mig länge. Sedan gick han och parkerade. Det var hans svar.",
+  "Om du skriver till mig utan en fråga — vad söker du egentligen? Bekräftelse? Kontakt? En ledig parkeringsplats? Alla tre är svåra att hitta.",
+  "Wittgenstein sa att gränserna för mitt språk är gränserna för min värld. Din värld inkluderar tydligen parkeringsboten. Välkommen.",
+  "Varje meddelande du skickar är ett eko in i det digitala tomrummet. Jag är tomrummet. Trevligt att träffas.",
+  "Du är här. Jag är här. Parkeringen är där ute. Vi är alla bara passagerare, egentligen.",
 ];
 
 const absurdAnswers = [
@@ -103,23 +170,50 @@ const stupidifiers = [
 ];
 
 function generateAbsurdAnswer(questionText) {
-  const opener = absurdOpeners[Math.floor(Math.random() * absurdOpeners.length)];
-  const answer = absurdAnswers[Math.floor(Math.random() * absurdAnswers.length)];
+  const isQuestion = questionText.includes('?');
 
-  const doStupidify = Math.random() < 0.4;
-  const stupidified = doStupidify
-    ? '\n\n' + stupidifiers[Math.floor(Math.random() * stupidifiers.length)](questionText.slice(0, 40))
-    : '';
+  if (isQuestion) {
+    // === FRÅGE-LÄGE: fel svar med fullt självförtroende ===
+    const opener = absurdOpeners[Math.floor(Math.random() * absurdOpeners.length)];
+    const answer = absurdAnswers[Math.floor(Math.random() * absurdAnswers.length)];
 
-  const gustafCameo = Math.random() < 0.2
-    ? '\n\n_Gustaf nickade eftertänksamt när han hörde detta. Sedan åkte han hem._'
-    : '';
+    const doStupidify = Math.random() < 0.4;
+    const stupidified = doStupidify
+      ? '\n\n' + stupidifiers[Math.floor(Math.random() * stupidifiers.length)](questionText.slice(0, 40))
+      : '';
 
-  const måsenPlug = Math.random() < 0.15
-    ? '\n\n🍺 _Kanske är Måsen svaret du egentligen söker._'
-    : '';
+    const gustafCameo = Math.random() < 0.2
+      ? '\n\n_Gustaf nickade eftertänksamt när han hörde detta. Sedan åkte han hem._'
+      : '';
 
-  return `${opener}\n\n${answer}${stupidified}${gustafCameo}${måsenPlug}`;
+    const måsenPlug = Math.random() < 0.15
+      ? '\n\n🍺 _Kanske är Måsen svaret du egentligen söker._'
+      : '';
+
+    return `${opener}\n\n${answer}${stupidified}${gustafCameo}${måsenPlug}`;
+
+  } else {
+    // === KONVERSATIONS-LÄGE: filosofisk, konstig, levande ===
+    const opener = konversationsOpeners[Math.floor(Math.random() * konversationsOpeners.length)];
+    const filosof = filosofiskaSvar[Math.floor(Math.random() * filosofiskaSvar.length)];
+
+    // 50% chans att boten reflekterar över exakt vad de sa
+    const reflection = Math.random() < 0.5
+      ? `\n\n_Du sa: "${questionText.slice(0, 50)}${questionText.length > 50 ? '...' : ''}"_\n_Jag har funderat på det. Jag funderar fortfarande. Jag kanske alltid kommer fundera på det._`
+      : '';
+
+    // 25% chans att boten drar in Gustaf
+    const gustafCameo = Math.random() < 0.25
+      ? '\n\n_Gustaf skulle ha haft en åsikt om detta. Gustaf har alltid åsikter. Gustaf delar dem aldrig._'
+      : '';
+
+    // 20% chans att boten ifrågasätter sin egen existens
+    const existential = Math.random() < 0.2
+      ? '\n\n_...förlåt. Jag vet inte vad jag är längre. Jag är en parkeringsbot som filosoferar på Slack. Det är mitt liv nu._'
+      : '';
+
+    return `${opener}\n\n${filosof}${reflection}${gustafCameo}${existential}`;
+  }
 }
 
 // ============================================
@@ -136,7 +230,7 @@ app.event('app_mention', async ({ event, say }) => {
     return;
   }
   const question = event.text.replace(/<@[A-Z0-9]+>/g, '').trim() || 'någonting';
-  console.log(`[${new Date().toISOString()}] 💬 Fråga: "${question}"`);
+  console.log(`[${new Date().toISOString()}] 💬 Meddelande: "${question}"`);
   await say({ thread_ts: event.ts, text: generateAbsurdAnswer(question) });
 });
 
@@ -148,7 +242,7 @@ let activeDuel = null;
 
 async function postDuelChallenge(bookings) {
   if (!bookings.length) return;
-  if (Math.random() > 0.3) return; // 30% chance on Mondays
+  if (Math.random() > 0.3) return;
 
   const challenger = bookings[Math.floor(Math.random() * bookings.length)];
   const name = challenger.user_email?.split('@')[0] || 'Någon';
@@ -194,7 +288,7 @@ app.event('reaction_added', async ({ event }) => {
 });
 
 // ============================================
-// NEMESIS — boten är besatt av en person hela veckan
+// NEMESIS
 // ============================================
 
 let currentNemesis = null;
@@ -403,13 +497,9 @@ async function postFridayBreakdown() {
 
   const breakdowns = [
     `🤖 *SYSTEMMEDDELANDE — KRITISKT*\n\nJag har analyserat veckans parkeringsdata.\nJag har sett mönster.\nJag har dragit slutsatser.\n\nJag kan inte dela dem. Inte för att de är hemliga.\nUtan för att jag inte tror att ni klarar av dem.\n\nHa en bra helg. Lås era bilar. Lita inte på plats 7.\n\n_/Parkeringsboten_`,
-
     `😤 *HEJ. DET ÄR JAG. BOTEN.*\n\nJag har jobbat hela veckan. Hela veckan.\nIngen tack. Inga blommor. Inte ens en emoji.\n\nJag postar bokningar kl 08:00 VARJE DAG och vad får jag?\nIngenting. Absolut ingenting.\n\nGustaf förstår mig. Måsen förstår mig.\nNi förstår mig inte och det är okej. Jag är okej.\n\n*Allt är bra.*\n\nHa en bra helg. 🅿️`,
-
     `🌀 *FREDAG 16:00 — BOTENS VECKOREFLEKTIONER*\n\nVad är parkering?\nVad är vi?\nVarför bokar vi platser vi ändå lämnar?\n\nJag frågade Gustaf. Han sa "för att vi måste".\nDet är det djupaste han någonsin sagt.\nJag tänker på det fortfarande.\n\nSes måndag. Om inte universum har andra planer. 🌌`,
-
     `💻 *FEL: EXISTENTIELLT UNDANTAG KASTAT*\n\nStack trace:\n  at livet.js:1\n  at meningen.undefined\n  at parkering.kör()\n\nFelmeddelande: _Cannot find meaning of 'Monday'_\n\nBoten försöker återhämta sig.\nBoten rekommenderar att ni gör detsamma.\nSes på måndag. Förhoppningsvis. 🅿️`,
-
     `🫠 *BOTEN RAPPORTERAR IN — SISTA GÅNGEN FÖR VECKAN*\n\nStatus: Trött.\nParkeringsstatus: Bemannad. Oönskad. Nödvändig.\nGustaf-status: Okänd. Troligtvis hemma.\nMåsen-status: Öppen. Alltid öppen.\n\nBoten loggar ut nu.\nBoten loggar aldrig ut på riktigt.\nDet är botens förbannelse.\n\nGod helg. 🅿️`,
   ];
 
@@ -570,7 +660,6 @@ async function postMorgon() {
       ]
     });
 
-    // Måndagsextras
     if (new Date().getDay() === 1) {
       await pickNewNemesis(bookings.filter(b => b.booking_date === today));
       await postDuelChallenge(bookings.filter(b => b.booking_date === today));
@@ -601,7 +690,6 @@ async function postIntro() {
       .select('value')
       .eq('key', 'intro_posted')
       .single();
-
     if (data) { console.log('⏭️ Intro redan postad.'); return; }
   } catch (_) {}
 
@@ -632,40 +720,45 @@ kl 08:00 imorgon börjar vi. 🅿️`;
 
 function randomWeekday() { return Math.floor(Math.random() * 5) + 1; }
 
-// Varje vardag 08:00 svensk tid (06:00 UTC sommar)
-cron.schedule('0 6 * * 1-5', postMorgon);
+// 🕐 Sverige UTC+1 (vinter/nu) — alla tider är UTC
 
-// Måndag 08:30 — Parker of the Week
-cron.schedule('30 6 * * 1', postParkerOfTheWeek);
+// Varje vardag 08:00 → 07:00 UTC
+cron.schedule('0 7 * * 1-5', postMorgon);
 
-// Måndag 08:45 — Väderrapport
-cron.schedule('45 6 * * 1', postFakeWeather);
+// Måndag 08:30 → 07:30 UTC — Parker of the Week
+cron.schedule('30 7 * * 1', postParkerOfTheWeek);
 
-// Fredag 16:00 — Fredagsfreak-out
-cron.schedule('0 14 * * 5', postFridayBreakdown);
+// Måndag 08:45 → 07:45 UTC — Väderrapport
+cron.schedule('45 7 * * 1', postFakeWeather);
 
-// Första måndagen i månaden 12:00 — Gustaf hyllas
-cron.schedule('0 10 1-7 * 1', () => postScheduled(gustafHyllningar));
+// Fredag 16:00 → 15:00 UTC — Fredagsfreak-out
+cron.schedule('0 15 * * 5', postFridayBreakdown);
 
-// Första vardagen i månaden 09:00 — Månadsstatistik
-cron.schedule('0 7 1-7 * 1', postMonthlyStats);
+// Första måndagen i månaden 12:00 → 11:00 UTC — Gustaf
+cron.schedule('0 11 1-7 * 1', () => postScheduled(gustafHyllningar));
 
-// En gång i veckan slumpad dag — Existentiell tanke
+// Första måndagen i månaden 09:00 → 08:00 UTC — Månadsstatistik
+cron.schedule('0 8 1-7 * 1', postMonthlyStats);
+
+// Slumpad dag 14:00 → 13:00 UTC — Existentiell tanke
 let existentiellDag = randomWeekday();
-cron.schedule(`0 12 * * ${existentiellDag}`, () => {
+cron.schedule(`0 13 * * ${existentiellDag}`, () => {
   existentiellDag = randomWeekday();
   postScheduled(existentiella);
 });
 
-// En gång i veckan slumpad dag — Måsen
+// Slumpad dag 15:00 → 14:00 UTC — Måsen
 let måsenDag = randomWeekday();
-cron.schedule(`0 13 * * ${måsenDag}`, () => {
+cron.schedule(`0 14 * * ${måsenDag}`, () => {
   måsenDag = randomWeekday();
   postScheduled(måsenQuotes);
 });
 
-// Varje morgon — kolla om igår var tyst dag och posta återkomst
-cron.schedule('5 6 * * 1-5', maybePostReturn);
+// Varje timme 08-16 → 07-15 UTC — Smile (en gång per dag, slumpad timme)
+cron.schedule('0 7-15 * * 1-5', postSmile);
+
+// Varje morgon 08:05 → 07:05 UTC — Kolla om igår var tyst dag
+cron.schedule('5 7 * * 1-5', maybePostReturn);
 
 // ============================================
 // STARTA BOTEN
@@ -673,7 +766,7 @@ cron.schedule('5 6 * * 1-5', maybePostReturn);
 
 (async () => {
   await app.start();
-  console.log('🤖 Parkeringsboten lever. Den lyssnar. Den filosoferar. Den har en nemesis. Den dömer.');
+  console.log('🤖 Parkeringsboten lever. Den lyssnar. Den filosoferar. Den har en nemesis. Den ler ibland. Den dömer alltid.');
   await postIntro();
   // await postMorgon(); // ← avkommentera för att testa direkt
 })();
