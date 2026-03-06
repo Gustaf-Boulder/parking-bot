@@ -361,6 +361,7 @@ kl 08:00 imorgon börjar vi. 🅿️`;
   await app.start();
   console.log('🤖 Parkeringsboten lever. Den lyssnar. Den filosoferar. Den dömer.');
 
+  //will post an intro message the first time it runs, to announce itself to the channel. It checks a Supabase table to ensure it only posts once ever.
     await postIntro();
-    
+
 })();
