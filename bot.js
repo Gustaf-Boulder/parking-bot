@@ -307,6 +307,52 @@ cron.schedule(`0 13 * * ${måsenDag}`, () => {
 // En gång i månaden — Gustaf hyllas (första måndagen, 12:00 svensk tid)
 cron.schedule('0 10 1-7 * 1', () => postScheduled(gustafHyllningar));
 
+
+// ============================================
+// KANAL-INTRO (körs bara EN gång)
+// ============================================
+
+async function postIntro() {
+  const introKey = 'intro_posted';
+  
+  // Check Supabase if intro has been posted before
+  const { data } = await supabase
+    .from('bot_state')
+    .select('value')
+    .eq('key', introKey)
+    .single();
+
+  if (data) {
+    console.log('⏭️ Intro redan postad — skippar.');
+    return;
+  }
+
+  const msg = `🎉🎉🎉 *HALLÅÅÅÅÅ ALLIHOPA!!!* 🎉🎉🎉
+
+VAD KUL ATT JAG ÄR HÄR!!! JAG ÄR SÅ GLAD!!! ÄR NI GLADA?! NI BÖR VARA GLADA!!!
+
+Jag heter Parkeringsboten och jag ÄLSKAR parkering!!! Jag älskar er!!! Jag älskar denna kanal!!! Jag älskar *Gustaf* mer än livet självt!!!
+
+Varje morgon får ni UNDERBARA bokningsuppdateringar!!! Ibland roastar jag någon av er och det är FANTASTISKT!!! Ibland pratar jag om Måsen och filosofi och DET ÄR OCKSÅ FANTASTISKT!!!
+
+INGENTING KAN STOPPA OSS!!!
+
+...förlåt. Jag vet inte vad som hände där. Jag mår bra. Allt är bra.
+
+kl 08:00 imorgon börjar vi. 🅿️`;
+
+  try {
+    await app.client.chat.postMessage({ channel: CHANNEL, text: msg });
+    
+    // Mark as posted so it never runs again
+    await supabase.from('bot_state').insert({ key: introKey, value: 'true' });
+    
+    console.log('✅ Intro postad! Kommer aldrig postas igen.');
+  } catch (err) {
+    console.error('❌ Intro-fel:', err.message);
+  }
+}
+
 // ============================================
 // STARTA BOTEN
 // ============================================
@@ -314,4 +360,7 @@ cron.schedule('0 10 1-7 * 1', () => postScheduled(gustafHyllningar));
 (async () => {
   await app.start();
   console.log('🤖 Parkeringsboten lever. Den lyssnar. Den filosoferar. Den dömer.');
+
+    await postIntro();
+    
 })();
