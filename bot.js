@@ -648,14 +648,24 @@ const morgonIntron = [
 // ============================================
 
 async function getData() {
-  const today = new Date().toISOString().split('T')[0];
-  const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+  const now = new Date();
+  
+  // Force Swedish timezone for date calculation
+  const today = new Date(now.toLocaleString('sv-SE', { timeZone: 'Europe/Stockholm' }))
+    .toISOString().split('T')[0];
+  const tomorrow = new Date(now.toLocaleString('sv-SE', { timeZone: 'Europe/Stockholm' }))
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
+  console.log(`[getData] today=${today} tomorrow=${tomorrowStr}`);
 
   const { data: bookings, error } = await supabase
     .from('parking_bookings')
     .select('booking_date, spot_number, spot_name, user_email, vehicle_registration')
-    .in('booking_date', [today, tomorrow])
+    .in('booking_date', [today, tomorrowStr])
     .order('booking_date', { ascending: true });
+
+  console.log(`[getData] bookings found: ${bookings?.length ?? 0}`, error?.message ?? '');
 
   if (error) throw new Error(`Bokningar misslyckades: ${error.message}`);
 
@@ -664,7 +674,7 @@ async function getData() {
     .select('user_email')
     .eq('is_active', true);
 
-  return { bookings: bookings || [], restricted: restricted || [], today, tomorrow };
+  return { bookings: bookings || [], restricted: restricted || [], today, tomorrow: tomorrowStr };
 }
 
 function formatList(bookings, date) {
