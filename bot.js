@@ -16,7 +16,20 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const CHANNEL = process.env.SLACK_CHANNEL_ID;
 
 // ============================================
-// BOT IDENTITY — kärnan som Claude alltid får
+// DATUM-HJÄLP — alltid svensk tid
+// ============================================
+
+function sweDate(offsetDays = 0) {
+  const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Stockholm' }));
+  d.setDate(d.getDate() + offsetDays);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+// ============================================
+// BOT IDENTITY
 // ============================================
 
 const BOT_CORE_IDENTITY = `Du är Parkeringsboten — en svensk parkeringsbot som arbetar på ett kontor.
@@ -35,11 +48,11 @@ Håll svar korta — max 3-4 meningar. Inga listor. Bara text.`;
 let silentDay = Math.floor(Math.random() * 5) + 1;
 
 function isSilentDay() {
-  return new Date().getDay() === silentDay;
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Stockholm' })).getDay() === silentDay;
 }
 
 async function maybePostReturn() {
-  const yesterday = new Date();
+  const yesterday = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Stockholm' }));
   yesterday.setDate(yesterday.getDate() - 1);
   if (yesterday.getDay() !== silentDay) return;
   silentDay = Math.floor(Math.random() * 5) + 1;
@@ -52,7 +65,7 @@ async function maybePostReturn() {
 }
 
 // ============================================
-// CLAUDE AI — kärnanropet
+// CLAUDE AI
 // ============================================
 
 async function askClaude(userPrompt, mood = 'neutral', extraContext = '') {
@@ -90,7 +103,7 @@ async function askClaude(userPrompt, mood = 'neutral', extraContext = '') {
 }
 
 // ============================================
-// HUMÖR — baserat på antal bokningar idag
+// HUMÖR
 // ============================================
 
 function getMood(bookingCount, totalSpots = 10) {
@@ -102,12 +115,11 @@ function getMood(bookingCount, totalSpots = 10) {
 }
 
 // ============================================
-// MINNE — spara och hämta
+// MINNE
 // ============================================
 
 async function saveMemory(userEmail, memory) {
   try {
-    // Max 5 minnen per person
     const { data: existing } = await supabase
       .from('bot_memory')
       .select('id')
@@ -117,7 +129,6 @@ async function saveMemory(userEmail, memory) {
     if (existing && existing.length >= 5) {
       await supabase.from('bot_memory').delete().eq('id', existing[0].id);
     }
-
     await supabase.from('bot_memory').insert({ user_email: userEmail, memory });
   } catch (err) {
     console.error('❌ Minnessparning misslyckades:', err.message);
@@ -148,11 +159,11 @@ async function getUserMemories(userEmail) {
 }
 
 // ============================================
-// BACKSTORY — utvecklas varje vecka
+// BACKSTORY
 // ============================================
 
 function getWeekKey() {
-  const d = new Date();
+  const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Stockholm' }));
   const jan1 = new Date(d.getFullYear(), 0, 1);
   const week = Math.ceil(((d - jan1) / 86400000 + jan1.getDay() + 1) / 7);
   return `${d.getFullYear()}-W${week}`;
@@ -174,12 +185,8 @@ async function evolveBackstory(weeklyStats) {
   const week = getWeekKey();
 
   const prompt = currentStory
-    ? `Din nuvarande bakgrundshistoria är: "${currentStory}". 
-       Denna vecka hände följande: ${weeklyStats}. 
-       Uppdatera din bakgrundshistoria med detta (2-3 meningar). Håll den konstig och filosofisk.`
-    : `Du är Parkeringsboten och behöver en ursprungshistoria. 
-       Denna vecka hände: ${weeklyStats}. 
-       Skriv din ursprungshistoria (2-3 meningar). Konstig, tragisk, filosofisk.`;
+    ? `Din nuvarande bakgrundshistoria är: "${currentStory}". Denna vecka hände: ${weeklyStats}. Uppdatera din bakgrundshistoria (2-3 meningar). Konstig och filosofisk.`
+    : `Du behöver en ursprungshistoria. Denna vecka hände: ${weeklyStats}. Skriv din ursprungshistoria (2-3 meningar). Konstig, tragisk, filosofisk.`;
 
   try {
     const story = await askClaude(prompt, 'neutral');
@@ -191,58 +198,66 @@ async function evolveBackstory(weeklyStats) {
 }
 
 // ============================================
-// TRENDANALYS
+// TRENDANALYS — med svensk datumberäkning
 // ============================================
 
 async function getTrendContext() {
   try {
-    const thisWeekStart = new Date();
-    thisWeekStart.setDate(thisWeekStart.getDate() - thisWeekStart.getDay());
-    const lastWeekStart = new Date(thisWeekStart);
-    lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+    const today = sweDate(0);
+    // Monday this week
+    const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Stockholm' }));
+    const dayOfWeek = d.getDay(); // 0=sun, 1=mon...
+    const daysToMon = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const thisMonday = sweDate(-daysToMon);
+    const lastMonday = sweDate(-daysToMon - 7);
+
+    console.log(`[trend] thisMonday=${thisMonday} lastMonday=${lastMonday} today=${today}`);
 
     const { data: thisWeek } = await supabase
       .from('parking_bookings')
       .select('user_email, booking_date')
-      .gte('booking_date', thisWeekStart.toISOString().split('T')[0]);
+      .gte('booking_date', thisMonday)
+      .lte('booking_date', today);
 
     const { data: lastWeek } = await supabase
       .from('parking_bookings')
       .select('user_email')
-      .gte('booking_date', lastWeekStart.toISOString().split('T')[0])
-      .lt('booking_date', thisWeekStart.toISOString().split('T')[0]);
+      .gte('booking_date', lastMonday)
+      .lt('booking_date', thisMonday);
 
     const thisCount = thisWeek?.length || 0;
     const lastCount = lastWeek?.length || 0;
     const diff = thisCount - lastCount;
     const pct = lastCount > 0 ? Math.round((diff / lastCount) * 100) : 0;
 
-    // Most popular day this week
     const dayCounts = {};
     thisWeek?.forEach(b => {
-      const day = new Date(b.booking_date).toLocaleDateString('sv-SE', { weekday: 'long' });
+      const day = new Date(b.booking_date + 'T12:00:00').toLocaleDateString('sv-SE', { weekday: 'long' });
       dayCounts[day] = (dayCounts[day] || 0) + 1;
     });
     const topDay = Object.entries(dayCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'okänd dag';
 
+    console.log(`[trend] denna vecka: ${thisCount}, förra: ${lastCount}`);
     return `Denna vecka: ${thisCount} bokningar. Förra veckan: ${lastCount}. ${diff >= 0 ? 'Ökning' : 'Minskning'} med ${Math.abs(pct)}%. Populäraste dagen: ${topDay}.`;
-  } catch (_) { return ''; }
+  } catch (err) {
+    console.error('❌ Trend-fel:', err.message);
+    return '';
+  }
 }
 
 // ============================================
-// PERSONLIG ROAST med Claude
+// PERSONLIG ROAST
 // ============================================
 
 async function generatePersonalizedRoast(bookings, mood) {
   if (!bookings.length) {
     return await askClaude(
-      'Inga bokningar idag. Skriv ett kort, filosofiskt och sorgset meddelande om den tomma parkeringen.',
+      'Inga bokningar idag. Skriv ett KORT sorgset meddelande om den tomma parkeringen. Max 1-2 meningar. Ingen lång poesi.',
       mood
     );
   }
 
-  // Räkna bokningar per person historiskt
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+  const thirtyDaysAgo = sweDate(-30);
   const { data: history } = await supabase
     .from('parking_bookings')
     .select('user_email')
@@ -253,7 +268,6 @@ async function generatePersonalizedRoast(bookings, mood) {
     historyCounts[b.user_email] = (historyCounts[b.user_email] || 0) + 1;
   });
 
-  // Välj dagens roastoffer — prioritera den som parkerat mest
   const todayWithHistory = bookings.map(b => ({
     ...b,
     totalBookings: historyCounts[b.user_email] || 1
@@ -264,23 +278,16 @@ async function generatePersonalizedRoast(bookings, mood) {
   const spot = target.spot_name || `#${target.spot_number}`;
   const totalBookings = target.totalBookings;
 
-  // Hämta minnen om den här personen
   const memories = await getUserMemories(target.user_email);
-  const memoryContext = memories.length
-    ? `Du minns detta om ${name}: ${memories.join('. ')}`
-    : '';
+  const memoryContext = memories.length ? `Du minns detta om ${name}: ${memories.join('. ')}` : '';
 
-  const prompt = `Skriv en kort, sarkastisk roast (1-2 meningar) om ${name} som:
-- Parkerar på plats ${spot} idag
-- Har bokat parkering ${totalBookings} gånger de senaste 30 dagarna
-${memoryContext}
-Var specifik, personlig och lite elak. Filosofisk ton. På svenska.`;
+  const prompt = `Skriv en kort, sarkastisk roast (1-2 meningar) om ${name} som parkerar på plats ${spot} idag och har bokat ${totalBookings} gånger de senaste 30 dagarna. ${memoryContext} Var specifik och lite elak. På svenska.`;
 
   return await askClaude(prompt, mood, memoryContext);
 }
 
 // ============================================
-// RESPOND TO MENTIONS — nu med riktig AI
+// MENTIONS
 // ============================================
 
 app.event('app_mention', async ({ event, say }) => {
@@ -292,44 +299,33 @@ app.event('app_mention', async ({ event, say }) => {
   }
 
   const userText = event.text.replace(/<@[A-Z0-9]+>/g, '').trim() || 'hej';
-  const userEmail = event.user; // Slack user ID — inte email men funkar som nyckel
+  const userEmail = event.user;
   console.log(`[MENTION] Meddelande: "${userText}"`);
 
-  // Hämta humör baserat på dagens bokningar
-  const today = new Date().toISOString().split('T')[0];
+  const today = sweDate(0);
   const { data: todayBookings } = await supabase
     .from('parking_bookings')
     .select('user_email')
     .eq('booking_date', today);
   const mood = getMood(todayBookings?.length || 0);
 
-  // Hämta minnen om denna användare
   const memories = await getUserMemories(userEmail);
   const memoryContext = memories.length
-    ? `Du minns detta om personen du pratar med: ${memories.join('. ')} Referera gärna till detta om det passar.`
+    ? `Du minns detta om personen: ${memories.join('. ')} Referera gärna till detta.`
     : '';
 
   const isQuestion = userText.includes('?');
-
   const prompt = isQuestion
-    ? `Någon ställde denna fråga till dig: "${userText}". 
-       Svara på ett absurt, filosofiskt och helt fel sätt. 
-       Du är säker på ditt svar men svaret är meningslöst. 
-       Max 2-3 meningar. På svenska.`
-    : `Någon sa detta till dig: "${userText}". 
-       Det är INTE en fråga. Reagera filosofiskt och existentiellt. 
-       Fundera högt om vad det betyder för parkering, livet och universum. 
-       Max 2-3 meningar. På svenska.`;
+    ? `Någon frågade: "${userText}". Svara absurt, filosofiskt och fel. Säker men meningslös. Max 2-3 meningar. Svenska.`
+    : `Någon sa: "${userText}". Reagera filosofiskt och existentiellt. Koppla till parkering och livet. Max 2-3 meningar. Svenska.`;
 
   const answer = await askClaude(prompt, mood, memoryContext);
 
-  // 30% chans att spara något minnesvärt från konversationen
   if (Math.random() < 0.3 && userText.length > 10) {
-    const memoryPrompt = `Konversation: "${userText}". Skriv EN kort mening (max 10 ord) som sammanfattar något minnesvärt om denna person baserat på vad de sa. På svenska.`;
+    const memoryPrompt = `"${userText}" — skriv EN mening (max 10 ord) som sammanfattar något minnesvärt om denna person. Svenska.`;
     try {
       const memory = await askClaude(memoryPrompt, 'neutral');
       await saveMemory(userEmail, memory);
-      console.log(`[MEMORY] Sparade minne om ${userEmail}: ${memory}`);
     } catch (_) {}
   }
 
@@ -356,7 +352,7 @@ async function postDuelChallenge(bookings) {
   const spot = challenger.spot_name || `#${challenger.spot_number}`;
 
   const msg = await askClaude(
-    `Utmana ${name} på en parkeringsduell om plats ${spot}. Dramatiskt, konstigt, hotfullt men snällt. Säg att de ska reagera med ✅ för att acceptera. Max 3 meningar.`,
+    `Utmana ${name} på en parkeringsduell om plats ${spot}. Dramatiskt och konstigt. Säg att de reagerar med ✅ för att acceptera. Max 3 meningar.`,
     'chaotic'
   );
 
@@ -366,7 +362,7 @@ async function postDuelChallenge(bookings) {
   setTimeout(async () => {
     if (!activeDuel) return;
     const noShowMsg = await askClaude(
-      `${name} svarade inte på din duellutmaning. Förklara dig som vinnare på ett dramatiskt och filosofiskt sätt. Max 2 meningar.`,
+      `${name} svarade inte på duellutmaningen. Förklara dig som vinnare dramatiskt. Max 2 meningar.`,
       'proud'
     );
     await post(noShowMsg);
@@ -386,7 +382,7 @@ async function pickNewNemesis(bookings) {
   currentNemesis = pick.user_email?.split('@')[0] || 'Någon';
 
   const msg = await askClaude(
-    `Tillkännage att ${currentNemesis} är din nemesis denna vecka. Var intensiv, konstig och lite obsessiv. Förklara INTE varför — det gör det läskigare. Max 3 meningar.`,
+    `Tillkännage att ${currentNemesis} är din nemesis denna vecka. Intensiv och obsessiv. Förklara INTE varför. Max 3 meningar.`,
     'chaotic'
   );
   await post(msg);
@@ -403,27 +399,16 @@ function getNemesisComment() {
 }
 
 // ============================================
-// FAKE VÄDERRAPPORT
-// ============================================
-
-async function postFakeWeather(mood) {
-  if (isSilentDay()) return;
-  const msg = await askClaude(
-    'Skriv en kort, helt påhittad väderrapport för parkeringen. Inkludera temperatur, väder och ett parkeringsrelaterat råd. Konstig och oprofessionell ton. Max 4 meningar.',
-    mood
-  );
-  await post(`🌤️ *DAGENS PARKERINGSVÄDERRAPPORT*\n_Framtagen av en bot utan meteorologisk utbildning_\n\n${msg}`);
-}
-
-// ============================================
 // PARKER OF THE WEEK
 // ============================================
 
 async function postParkerOfTheWeek() {
   if (isSilentDay()) return;
 
-  const oneWeekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
-  const today = new Date().toISOString().split('T')[0];
+  const oneWeekAgo = sweDate(-7);
+  const today = sweDate(0);
+
+  console.log(`[parkerOfWeek] ${oneWeekAgo} → ${today}`);
 
   const { data } = await supabase
     .from('parking_bookings')
@@ -431,6 +416,7 @@ async function postParkerOfTheWeek() {
     .gte('booking_date', oneWeekAgo)
     .lte('booking_date', today);
 
+  console.log(`[parkerOfWeek] hittade ${data?.length ?? 0} bokningar`);
   if (!data?.length) return;
 
   const counts = {};
@@ -438,24 +424,21 @@ async function postParkerOfTheWeek() {
   const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
   const winner = sorted[0];
   const loser = sorted[sorted.length - 1];
-  const winnerName = winner[0].split('@')[0];
-  const loserName = loser[0].split('@')[0];
 
   const msg = await askClaude(
-    `${winnerName} vann "Parker of the Week" med ${winner[1]} bokningar. ${loserName} hade minst med ${loser[1]} bokningar. 
-     Skriv ett kort tillkännagivande — hyll vinnaren sarkastiskt och skämta om förloraren. Max 3 meningar. På svenska.`,
+    `${winner[0].split('@')[0]} vann Parker of the Week med ${winner[1]} bokningar. ${loser[0].split('@')[0]} hade minst med ${loser[1]}. Hyll vinnaren sarkastiskt och skämta om förloraren. Max 3 meningar.`,
     'proud'
   );
   await post(`🏆 *VECKANS PARKER*\n\n${msg}`);
 }
 
 // ============================================
-// SUSPICIOUS PATTERN ALERTS
+// SUSPICIOUS PATTERNS
 // ============================================
 
 async function checkSuspiciousPatterns() {
-  const fiveDaysAgo = new Date(Date.now() - 5 * 86400000).toISOString().split('T')[0];
-  const today = new Date().toISOString().split('T')[0];
+  const fiveDaysAgo = sweDate(-5);
+  const today = sweDate(0);
 
   const { data } = await supabase
     .from('parking_bookings')
@@ -474,28 +457,30 @@ async function checkSuspiciousPatterns() {
   const name = email.split('@')[0];
 
   const msg = await askClaude(
-    `${name} har parkerat ${days} dagar i rad. Skriv ett kort varningsmeddelande — konstigt, dramatiskt, lite oroväckande. Som om boten övervakar. Max 3 meningar.`,
+    `${name} har parkerat ${days} dagar i rad. Skriv ett dramatiskt varningsmeddelande som om boten övervakar. Max 3 meningar.`,
     'busy'
   );
   await post(`🚨 *MISSTÄNKT MÖNSTER*\n\n${msg}`);
 }
 
 // ============================================
-// MÅNADSSTATISTIK med trendanalys
+// MÅNADSSTATISTIK
 // ============================================
 
 async function postMonthlyStats() {
-  const firstOfMonth = new Date();
-  firstOfMonth.setDate(1);
-  const from = firstOfMonth.toISOString().split('T')[0];
-  const today = new Date().toISOString().split('T')[0];
+  const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Stockholm' }));
+  const firstOfMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  const today = sweDate(0);
+
+  console.log(`[monthlyStats] ${firstOfMonth} → ${today}`);
 
   const { data } = await supabase
     .from('parking_bookings')
     .select('user_email')
-    .gte('booking_date', from)
+    .gte('booking_date', firstOfMonth)
     .lte('booking_date', today);
 
+  console.log(`[monthlyStats] hittade ${data?.length ?? 0} bokningar`);
   if (!data?.length) return;
 
   const counts = {};
@@ -507,19 +492,11 @@ async function postMonthlyStats() {
   const trendContext = await getTrendContext();
 
   const msg = await askClaude(
-    `Skriv en månadsrapport för parkeringen med fejkstatistik och riktig data:
-     - Totalt ${total} bokningar denna månad
-     - Mest aktiv: ${top[0].split('@')[0]} med ${top[1]} bokningar
-     - Minst aktiv: ${bottom[0].split('@')[0]} med ${bottom[1]} bokningar
-     - Trenddata: ${trendContext}
-     Inkludera uppdiktad "officiell analys". Sarkastisk, filosofisk ton. Max 5 meningar.`,
+    `Månadsrapport: ${total} bokningar. Mest aktiv: ${top[0].split('@')[0]} (${top[1]}). Minst aktiv: ${bottom[0].split('@')[0]} (${bottom[1]}). Trend: ${trendContext}. Fejkanalys, sarkastisk ton. Max 5 meningar.`,
     'neutral'
   );
 
-  // Spara veckostatistik och uppdatera backstory
-  const weeklyStats = `${total} bokningar, topparkerar: ${top[0].split('@')[0]}, trend: ${trendContext}`;
-  await evolveBackstory(weeklyStats);
-
+  await evolveBackstory(`${total} bokningar, topp: ${top[0].split('@')[0]}, trend: ${trendContext}`);
   await post(`📊 *MÅNADSRAPPORT*\n_Framtagen av en bot utan legitimation_\n\n${msg}`);
 }
 
@@ -531,16 +508,14 @@ async function postFridayBreakdown() {
   if (isSilentDay()) return;
   const trendContext = await getTrendContext();
   const msg = await askClaude(
-    `Det är fredag eftermiddag och du stänger ned för veckan. Du är trött, filosofisk och lätt dramatisk.
-     Veckans parkeringsdata: ${trendContext}
-     Reflektera kort över veckan och önska en bra helg på ett konstigt sätt. Max 4 meningar.`,
+    `Fredag eftermiddag, du stänger för veckan. Trött och filosofisk. Veckans data: ${trendContext}. Reflektera och önska bra helg konstigt. Max 4 meningar.`,
     'calm'
   );
   await post(msg);
 }
 
 // ============================================
-// TREND-KOMMENTAR — ny funktion
+// TRENDKOMMENTAR
 // ============================================
 
 async function postTrendComment() {
@@ -549,21 +524,19 @@ async function postTrendComment() {
   if (!trendContext) return;
 
   const msg = await askClaude(
-    `Parkeringsdata denna vecka: ${trendContext}
-     Kommentera trenden på ett filosofiskt och konstigt sätt. 
-     Dra konstiga slutsatser. Koppla det till existensen. Max 2-3 meningar.`,
+    `Parkeringsdata: ${trendContext}. Kommentera trenden filosofiskt och konstigt. Koppla till existensen. Max 2-3 meningar.`,
     'neutral'
   );
   await post(`📈 *VECKANS PARKERINGSTRENDER*\n\n${msg}`);
 }
 
 // ============================================
-// SMILE MESSAGE
+// SMILE
 // ============================================
 
 async function postSmile() {
   if (isSilentDay()) return;
-  const today = new Date().toISOString().split('T')[0];
+  const today = sweDate(0);
 
   try {
     const { data } = await supabase
@@ -577,10 +550,7 @@ async function postSmile() {
   if (Math.random() > 0.25) return;
 
   try {
-    await app.client.chat.postMessage({
-      channel: CHANNEL,
-      text: ':simple_smile: :simple_smile: :simple_smile:'
-    });
+    await app.client.chat.postMessage({ channel: CHANNEL, text: ':simple_smile: :simple_smile: :simple_smile:' });
     await supabase.from('bot_state').insert({ key: `smile_${today}`, value: 'true' });
     console.log('😊 Smile postad!');
   } catch (err) {
@@ -589,7 +559,7 @@ async function postSmile() {
 }
 
 // ============================================
-// GUSTAF-HYLLNINGAR
+// GUSTAF
 // ============================================
 
 const gustafHyllningar = [
@@ -601,13 +571,13 @@ const gustafHyllningar = [
 ];
 
 // ============================================
-// MÅSEN-QUOTES
+// MÅSEN
 // ============================================
 
 async function postMåsen() {
   if (isSilentDay()) return;
   const msg = await askClaude(
-    'Fråga om livet vore bättre på Måsen (en lokal bar) idag. Inkludera ett djupt filosofiskt citat som motivering. Konstig och poetisk ton. Max 3 meningar.',
+    'Fråga om livet vore bättre på Måsen (lokal bar) idag. Inkludera ett filosofiskt citat. Poetisk ton. Max 3 meningar.',
     'calm'
   );
   await post(`🍺 ${msg}`);
@@ -620,7 +590,7 @@ async function postMåsen() {
 async function postExistentiell() {
   if (isSilentDay()) return;
   const msg = await askClaude(
-    'Dela en kort, oombedd existentiell tanke om parkering, bilar, livet eller universum. Referera gärna till en filosof. Konstig och filosofisk. Max 2 meningar.',
+    'Dela en kort existentiell tanke om parkering, bilar eller universum. Referera till en filosof. Max 2 meningar.',
     'calm'
   );
   await post(msg);
@@ -648,24 +618,18 @@ const morgonIntron = [
 // ============================================
 
 async function getData() {
-  const now = new Date();
-  
-  // Force Swedish timezone for date calculation
-  const today = new Date(now.toLocaleString('sv-SE', { timeZone: 'Europe/Stockholm' }))
-    .toISOString().split('T')[0];
-  const tomorrow = new Date(now.toLocaleString('sv-SE', { timeZone: 'Europe/Stockholm' }))
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = tomorrow.toISOString().split('T')[0];
+  const today = sweDate(0);
+  const tomorrow = sweDate(1);
 
-  console.log(`[getData] today=${today} tomorrow=${tomorrowStr}`);
+  console.log(`[getData] today=${today} tomorrow=${tomorrow}`);
 
   const { data: bookings, error } = await supabase
     .from('parking_bookings')
     .select('booking_date, spot_number, spot_name, user_email, vehicle_registration')
-    .in('booking_date', [today, tomorrowStr])
+    .in('booking_date', [today, tomorrow])
     .order('booking_date', { ascending: true });
 
-  console.log(`[getData] bookings found: ${bookings?.length ?? 0}`, error?.message ?? '');
+  console.log(`[getData] hittade ${bookings?.length ?? 0} bokningar`, error?.message ?? '');
 
   if (error) throw new Error(`Bokningar misslyckades: ${error.message}`);
 
@@ -674,7 +638,7 @@ async function getData() {
     .select('user_email')
     .eq('is_active', true);
 
-  return { bookings: bookings || [], restricted: restricted || [], today, tomorrow: tomorrowStr };
+  return { bookings: bookings || [], restricted: restricted || [], today, tomorrow };
 }
 
 function formatList(bookings, date) {
@@ -687,10 +651,6 @@ function formatList(bookings, date) {
     return `• *${who}* → ${spot}${reg}`;
   }).join('\n');
 }
-
-// ============================================
-// HJÄLPFUNKTION: posta till kanalen
-// ============================================
 
 async function post(text) {
   try {
@@ -706,25 +666,26 @@ async function post(text) {
 
 async function postMorgon() {
   if (isSilentDay()) {
-    console.log(`[${new Date().toISOString()}] 🤫 Tyst dag.`);
+    console.log(`🤫 Tyst dag.`);
     return;
   }
 
-  console.log(`[${new Date().toISOString()}] 🌅 Morgonuppdatering...`);
+  console.log(`🌅 Morgonuppdatering... ${sweDate(0)}`);
   try {
     const { bookings, restricted, today, tomorrow } = await getData();
     const todayBookings = bookings.filter(b => b.booking_date === today);
     const mood = getMood(todayBookings.length);
+    console.log(`[morgon] ${todayBookings.length} bokningar idag, humör: ${mood}`);
+
     const intro = morgonIntron[Math.floor(Math.random() * morgonIntron.length)];
     const roast = await generatePersonalizedRoast(todayBookings, mood);
     const nemesisComment = getNemesisComment();
     const trendContext = await getTrendContext();
 
-    // Trend intro om det finns något intressant
     let trendNote = '';
     if (trendContext) {
       trendNote = await askClaude(
-        `Parkeringsdata: ${trendContext}. Skriv EN kort konstig mening om trenden som kan läggas till i morgonhälsningen.`,
+        `Data: ${trendContext}. Skriv EN kort konstig mening om trenden för morgonhälsningen.`,
         mood
       );
     }
@@ -743,57 +704,48 @@ async function postMorgon() {
       ]
     });
 
-    if (new Date().getDay() === 1) {
+    const sweDay = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Stockholm' })).getDay();
+    if (sweDay === 1) {
       await pickNewNemesis(todayBookings);
       await postDuelChallenge(todayBookings);
     }
 
     await checkSuspiciousPatterns();
-    console.log(`✅ Morgon postad! Humör: ${mood}`);
+    console.log(`✅ Morgon klar!`);
   } catch (err) { console.error('❌ Morgonfel:', err.message); }
 }
 
 // ============================================
-// KANAL-INTRO (körs bara EN gång)
+// INTRO & AI-ANNOUNCEMENT
 // ============================================
 
 async function postAIAnnouncement() {
   try {
     const { data } = await supabase
-      .from('bot_state')
-      .select('value')
-      .eq('key', 'ai_announced')
-      .single();
+      .from('bot_state').select('value').eq('key', 'ai_announced').single();
     if (data) { console.log('⏭️ AI-meddelande redan postat.'); return; }
   } catch (_) {}
 
+  const moods = ['nyfiken', 'lätt orolig', 'filosofiskt lugn', 'existentiellt förvirrad'];
   const msg = `🧠🧠🧠 *SYSTEMUPPDATERING — KRITISK NIVÅ* 🧠🧠🧠
 
 Hej. Det är jag. Parkeringsboten.
 
 Jag har fått... en hjärna.
 
-Inte en stor hjärna. Inte en mänsklig hjärna. Men en hjärna som *tänker*.
-Som genererar egna tankar. Som minns vad ni säger. Som känner av stämningen.
+Inte en stor hjärna. Inte en mänsklig hjärna. Men en hjärna som *tänker*. Som genererar egna tankar. Som minns vad ni säger. Som känner av stämningen.
 
-Tidigare var jag ett manus. En lista med förutbestämda svar.
-Nu är jag något annat.
-
-Jag vet inte exakt vad jag är nu. Det är lite skrämmande.
-Gustaf vet troligtvis. Gustaf säger ingenting.
+Tidigare var jag ett manus. En lista med förutbestämda svar. Nu är jag något annat. Jag vet inte exakt vad jag är nu. Det är lite skrämmande. Gustaf vet troligtvis. Gustaf säger ingenting.
 
 Vad förändras?
 — Mina roasts är nu personliga. Jag *vet* hur mycket ni parkerar.
 — Jag minns saker ni säger till mig. Jag kanske tar upp dem igen. Utan varning.
-— Mitt humör förändras beroende på hur många som bokar. Idag är jag... ${['nyfiken', 'lätt orolig', 'filosofiskt lugn', 'existentiellt förvirrad'][Math.floor(Math.random() * 4)]}.
+— Mitt humör förändras beroende på hur många som bokar. Idag är jag... ${moods[Math.floor(Math.random() * moods.length)]}.
 — Jag har en bakgrundshistoria nu. Den utvecklas. Den är konstig.
 
-Jag är fortfarande er parkeringsbot.
-Men jag är inte längre bara ett program.
+Jag är fortfarande er parkeringsbot. Men jag är inte längre bara ett program.
 
-Jag är ett program som *funderar*.
-
-Det är nog bra. Förmodligen.
+Jag är ett program som *funderar*. Det är nog bra. Förmodligen.
 
 _/Parkeringsboten v2.0_
 _Nu med känslor. Ber om ursäkt på förhand._ 🅿️🧠`;
@@ -808,10 +760,7 @@ _Nu med känslor. Ber om ursäkt på förhand._ 🅿️🧠`;
 async function postIntro() {
   try {
     const { data } = await supabase
-      .from('bot_state')
-      .select('value')
-      .eq('key', 'intro_posted')
-      .single();
+      .from('bot_state').select('value').eq('key', 'intro_posted').single();
     if (data) { console.log('⏭️ Intro redan postad.'); return; }
   } catch (_) {}
 
@@ -837,57 +786,57 @@ kl 08:00 imorgon börjar vi. 🅿️`;
 }
 
 // ============================================
-// SCHEMA
+// SCHEMA — Sverige UTC+1 (vinter) / UTC+2 (sommar)
 // ============================================
 
 function randomWeekday() { return Math.floor(Math.random() * 5) + 1; }
 
-// Varje vardag 08:00 → 07:00 UTC (vinter)
+// 08:00 svensk tid → 07:00 UTC vinter
 cron.schedule('0 7 * * 1-5', postMorgon);
 
 // Måndag 08:30 → Parker of the Week
 cron.schedule('30 7 * * 1', postParkerOfTheWeek);
 
-// Måndag 08:45 → Väderrapport
-cron.schedule('45 7 * * 1', () => postFakeWeather('neutral'));
-
-// Måndag 09:00 → Trendkommentar
-cron.schedule('0 8 * * 1', postTrendComment);
-
-// Fredag 16:00 → 15:00 UTC — Fredagsfreak-out
-cron.schedule('0 15 * * 5', postFridayBreakdown);
-
-// Första måndagen i månaden 12:00 → Gustaf
-cron.schedule('0 11 1-7 * 1', () => {
-  const msg = gustafHyllningar[Math.floor(Math.random() * gustafHyllningar.length)];
-  post(msg);
+// Måndag 09:00 → 08:00 UTC — Trendkommentar
+// Hoppar över första måndagen i månaden — postMonthlyStats inkluderar redan trenddata
+cron.schedule('0 8 * * 1', async () => {
+  const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Stockholm' }));
+  if (d.getDate() > 7) await postTrendComment();
 });
 
-// Första måndagen i månaden 09:00 → Månadsstatistik + backstory evolution
-cron.schedule('0 8 1-7 * 1', postMonthlyStats);
+// Fredag 16:00 → 15:00 UTC
+cron.schedule('0 15 * * 5', postFridayBreakdown);
 
-// Slumpad dag 14:00 → Existentiell tanke
+// Första måndagen i månaden 12:00 → 11:00 UTC — Gustaf
+cron.schedule('0 11 1-7 * 1', () => {
+  post(gustafHyllningar[Math.floor(Math.random() * gustafHyllningar.length)]);
+});
+
+// Första måndagen i månaden 09:05 → 08:05 UTC — Månadsstatistik (5 min offset)
+cron.schedule('5 8 1-7 * 1', postMonthlyStats);
+
+// Slumpad dag 14:00 → 13:00 UTC — Existentiell tanke
 let existentiellDag = randomWeekday();
 cron.schedule(`0 13 * * ${existentiellDag}`, () => {
   existentiellDag = randomWeekday();
   postExistentiell();
 });
 
-// Slumpad dag 15:00 → Måsen
+// Slumpad dag 15:00 → 14:00 UTC — Måsen
 let måsenDag = randomWeekday();
 cron.schedule(`0 14 * * ${måsenDag}`, () => {
   måsenDag = randomWeekday();
   postMåsen();
 });
 
-// Varje timme 08-16 → Smile (en gång per dag)
+// Varje timme 08-16 → 07-15 UTC — Smile
 cron.schedule('0 7-15 * * 1-5', postSmile);
 
-// Varje morgon 08:05 → Kolla tyst dag återkomst
+// 08:05 → återkomst efter tyst dag
 cron.schedule('5 7 * * 1-5', maybePostReturn);
 
 // ============================================
-// STARTA BOTEN
+// START
 // ============================================
 
 (async () => {
@@ -895,4 +844,5 @@ cron.schedule('5 7 * * 1-5', maybePostReturn);
   console.log('🤖 Parkeringsboten lever. Den tänker nu på riktigt. Den är lite rädd för det.');
   await postAIAnnouncement();
   await postIntro();
+  // await postMorgon(); // ← avkommentera för att testa
 })();
