@@ -311,7 +311,8 @@ app.event('app_mention', async ({ event, say }) => {
   console.log(`[MENTION] Meddelande: "${userText}"`);
 
   // Gustaf-detection — är det guden själv som talar?
-  const gustafMode = await isGustaf(event.user);
+  console.log(`[MENTION] event.user="${event.user}" checking against GUSTAF_USER_ID="${GUSTAF_USER_ID}"`);
+  const gustafMode = isGustaf(event.user);
 
   const today = sweDate(0);
   const { data: todayBookings } = await supabase.from('parking_bookings')
