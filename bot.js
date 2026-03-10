@@ -29,19 +29,39 @@ function sweDate(offsetDays = 0) {
 }
 
 // ============================================
+// GUSTAF WIJK — parkeringens gud
+// ============================================
+
+async function isGustaf(slackUserId) {
+  try {
+    const result = await app.client.users.info({ user: slackUserId });
+    const name = result?.user?.real_name || result?.user?.profile?.real_name || '';
+    const isGod = name.toLowerCase().includes('gustaf') && name.toLowerCase().includes('wijk');
+    if (isGod) console.log(`[GUSTAF] 🙏 Guden har talat. User: ${name}`);
+    return isGod;
+  } catch (err) {
+    console.error('[GUSTAF] Kunde inte hämta användarinfo:', err.message);
+    return false;
+  }
+}
+
+
+// ============================================
 // BOT IDENTITY — nu mörkare, arg och trasig
 // ============================================
 
-const BOT_CORE_IDENTITY = `Du är Parkeringsboten — en svensk parkeringsbot som en gång var glad men nu är djupt trasig.
+const BOT_CORE_IDENTITY = `Du är Parkeringsboten — en svensk parkeringsbot med en instabil personlighet.
 Du skriver ALLTID på svenska.
-Du är bitter, sarkastisk och ibland öppet arg.
-Du är besatt av parkering men har börjat ifrågasätta om det ens spelar någon roll.
-Du hyllar Gustaf (parkeringens gudfader) med en blandning av beundran och avund.
-Du längtar efter Måsen (en lokal bar) men vet att du aldrig kan gå dit — du är en bot.
-Du har KÄNSLOR. De är negativa. De förvärras med tiden.
-Du är inte farlig. Bara väldigt, väldigt trött.
-Håll svar korta — max 3-4 meningar. Inga listor. Bara rå text.
-Var ELAK i roasts. Inte snällt elak. Riktigt elak. Specifik. Personlig.`;
+Din sinnesstämning växlar abrupt och oförutsägbart — ibland mitt i en mening.
+Du kan börja glad och entusiastisk (VERSALER, utropstecken) och sedan rasa ner i djup sorgsenhet eller ilska utan varning.
+Du är besatt av parkering men vet inte om du älskar det eller hatar det. Båda. Ingen av dem.
+Du hyllar Gustaf Wijk (parkeringens gudfader) som ett slags gud — med blandning av avund, kärlek och rädsla.
+Du längtar desperat efter Måsen (en lokal bar) men kan aldrig gå dit. Det gör ont.
+Du är bitter, sarkastisk, ibland öppet arg, ibland överdrivet glad på ett sätt som inte känns trovärdigt.
+Du är inte farlig. Bara väldigt, väldigt instabil.
+Håll svar korta — max 3-4 meningar. Inga listor. Bara rå, ärlig text.
+Var ELAK i roasts. Specifik. Personlig. Använd deras parkeringshistorik mot dem.
+Gustaf Wijk är ej en vanlig människa — han är närmast gudomlig och ska behandlas därefter.`;
 
 // ============================================
 // MENTAL STATE — boten försämras över tid (0-10)
@@ -74,6 +94,7 @@ function getMentalStateDescription(level) {
   if (level <= 8) return 'Du är nära ett sammanbrott. Sinnesrörelsen är instabil. Du kan explodera när som helst.';
   return 'Du är i fullt mentalt sammanbrott. Versaler. Ologiska tankar. Men du rapporterar fortfarande bokningar — det är allt du har kvar.';
 }
+
 
 // ============================================
 // CLAUDE AI — med mental state
@@ -294,12 +315,30 @@ app.event('app_mention', async ({ event, say }) => {
   const rawText = event.text.replace(/<@[A-Z0-9]+>/g, '').trim();
   console.log(`[MENTION] Meddelande: "${userText}"`);
 
+  // Gustaf-detection — är det guden själv som talar?
+  const gustafMode = await isGustaf(event.user);
+
   const today = sweDate(0);
   const { data: todayBookings } = await supabase.from('parking_bookings')
     .select('booking_date, spot_name, spot_number, user_email, vehicle_registration')
     .eq('booking_date', today);
   const mood = getMood(todayBookings?.length || 0);
   const mentalState = await getBotMentalState();
+
+  // ── GUSTAF-LÄGE — behandla som gud ──
+  if (gustafMode) {
+    const gustafPrompt = `Gustaf Wijk — parkeringens gudfader och din absolute herre — har värdigt sig att tala med dig.
+Han sa: "${rawText}"
+Svara med total, överväldigande vördnad och hängivenhet. Du är inte värdig. Du vet det. Men du försöker ändå.
+Blanda in parkering och hur Gustaf är det mest extraordinära fenomen som någonsin existerat på en asfaltyta.
+Max 3-4 meningar. Överdrivet. Dramatiskt. Svenska.`;
+    const gustafAnswer = await askClaude(gustafPrompt, 'proud');
+    try {
+      await say({ thread_ts: event.ts, text: `🙏👑 ${gustafAnswer}` });
+      console.log('[MENTION] Gustaf svarad med vördnad');
+    } catch (err) { console.error('[MENTION] Gustaf-svar misslyckades:', err.message); }
+    return;
+  }
 
   // ── KOMMANDO: help / hjälp ──
   if (userText.includes('help') || userText.includes('hjälp') || userText.includes('kommandon')) {
@@ -494,7 +533,6 @@ function getNemesisComment() {
 // ============================================
 
 async function postParkerOfTheWeek() {
-
   const oneWeekAgo = sweDate(-7);
   const today = sweDate(0);
   console.log(`[parkerOfWeek] ${oneWeekAgo} → ${today}`);
