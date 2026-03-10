@@ -32,7 +32,7 @@ function sweDate(offsetDays = 0) {
 // GUSTAF WIJK — parkeringens gud
 // ============================================
 
-const GUSTAF_USER_ID = 'D06LFAHQDEG'; // Parkeringens gud — Gustaf Wijk
+const GUSTAF_USER_ID = 'U06L9UUAD29'; // Parkeringens gud — Gustaf Wijk
 
 function isGustaf(slackUserId) {
   const isGod = slackUserId === GUSTAF_USER_ID;
