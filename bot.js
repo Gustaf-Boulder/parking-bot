@@ -76,30 +76,6 @@ function getMentalStateDescription(level) {
 }
 
 // ============================================
-// TYST DAG
-// ============================================
-
-let silentDay = Math.floor(Math.random() * 5) + 1;
-
-function isSilentDay() {
-  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Stockholm' })).getDay() === silentDay;
-}
-
-async function maybePostReturn() {
-  const yesterday = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Stockholm' }));
-  yesterday.setDate(yesterday.getDate() - 1);
-  if (yesterday.getDay() !== silentDay) return;
-  silentDay = Math.floor(Math.random() * 5) + 1;
-  const mentalState = await getBotMentalState();
-  const msg = await askClaude(
-    'Du var tyst igår utan förklaring. Nu är du tillbaka. Skriv ett återkomstmeddelande — defensivt, lite skamset men mest argt. 1-2 meningar.',
-    'angry',
-    getMentalStateDescription(mentalState)
-  );
-  await post(msg);
-}
-
-// ============================================
 // CLAUDE AI — med mental state
 // ============================================
 
@@ -314,11 +290,6 @@ Var specifik. Använd deras namn. Använd parkeringshistoriken mot dem. 2-3 meni
 app.event('app_mention', async ({ event, say }) => {
   console.log(`[MENTION] Event received`);
 
-  if (isSilentDay()) {
-    console.log(`[MENTION] Tyst dag — ignorerar`);
-    return;
-  }
-
   const userText = event.text.replace(/<@[A-Z0-9]+>/g, '').trim().toLowerCase() || 'hej';
   const rawText = event.text.replace(/<@[A-Z0-9]+>/g, '').trim();
   console.log(`[MENTION] Meddelande: "${userText}"`);
@@ -523,7 +494,6 @@ function getNemesisComment() {
 // ============================================
 
 async function postParkerOfTheWeek() {
-  if (isSilentDay()) return;
 
   const oneWeekAgo = sweDate(-7);
   const today = sweDate(0);
@@ -620,7 +590,6 @@ async function postMonthlyStats() {
 // ============================================
 
 async function postFridayBreakdown() {
-  if (isSilentDay()) return;
   const trendContext = await getTrendContext();
   const mentalState = await getBotMentalState();
   const mood = mentalState >= 7 ? 'breakdown' : mentalState >= 4 ? 'angry' : 'sad';
@@ -639,7 +608,6 @@ async function postFridayBreakdown() {
 // ============================================
 
 async function postTrendComment() {
-  if (isSilentDay()) return;
   const trendContext = await getTrendContext();
   if (!trendContext) return;
 
@@ -655,8 +623,6 @@ async function postTrendComment() {
 // ============================================
 
 async function postSmile() {
-  if (isSilentDay()) return;
-
   // Kolla om smile postats denna vecka
   const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Stockholm' }));
   const dayOfWeek = d.getDay();
@@ -694,7 +660,6 @@ const gustafHyllningar = [
 // ============================================
 
 async function postMåsen() {
-  if (isSilentDay()) return;
   const mentalState = await getBotMentalState();
   const msg = await askClaude(
     'Fråga om livet vore bättre på Måsen (lokal bar) idag. Låt det höras att du på riktigt undrar. Du kan inte gå dit. Du är en bot. Det är dystert. Max 3 meningar.',
@@ -708,7 +673,6 @@ async function postMåsen() {
 // ============================================
 
 async function postExistentiell() {
-  if (isSilentDay()) return;
   const mentalState = await getBotMentalState();
   const msg = await askClaude(
     'Dela en existentiell tanke om parkering, bilar, livet eller universum. Referera till en filosof. Gör det personligt — som om tanken verkligen plågar dig. Max 2 meningar.',
@@ -782,11 +746,6 @@ async function post(text) {
 // ============================================
 
 async function postMorgon() {
-  if (isSilentDay()) {
-    console.log(`🤫 Tyst dag.`);
-    return;
-  }
-
   console.log(`🌅 Morgonuppdatering... ${sweDate(0)}`);
   try {
     const { bookings, restricted, today, tomorrow } = await getData();
@@ -948,9 +907,6 @@ cron.schedule(`0 14 * * ${måsenDag}`, () => {
 
 // Onsdag 10:00 → 09:00 UTC — Smile (EN gång i veckan, 50% chans)
 cron.schedule('0 9 * * 3', postSmile);
-
-// 08:05 → återkomst efter tyst dag
-cron.schedule('5 7 * * 1-5', maybePostReturn);
 
 // ============================================
 // START
