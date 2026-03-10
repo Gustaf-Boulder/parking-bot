@@ -32,17 +32,12 @@ function sweDate(offsetDays = 0) {
 // GUSTAF WIJK — parkeringens gud
 // ============================================
 
-async function isGustaf(slackUserId) {
-  try {
-    const result = await app.client.users.info({ user: slackUserId });
-    const name = result?.user?.real_name || result?.user?.profile?.real_name || '';
-    const isGod = name.toLowerCase().includes('gustaf') && name.toLowerCase().includes('wijk');
-    if (isGod) console.log(`[GUSTAF] 🙏 Guden har talat. User: ${name}`);
-    return isGod;
-  } catch (err) {
-    console.error('[GUSTAF] Kunde inte hämta användarinfo:', err.message);
-    return false;
-  }
+const GUSTAF_USER_ID = 'D06LFAHQDEG'; // Parkeringens gud — Gustaf Wijk
+
+function isGustaf(slackUserId) {
+  const isGod = slackUserId === GUSTAF_USER_ID;
+  if (isGod) console.log('[GUSTAF] 🙏 GUDEN HAR TALAT');
+  return isGod;
 }
 
 
